@@ -4,22 +4,23 @@ import argparse
 import numpy as np
 from run_manager import RunConfig
 from model.super_proxyless import SuperProxylessNASNets
-from nas_manager import ArchSearchConfig, ArchSearchRunManager
+from nas_manager import ArchSearchConfig, ArchSearchRunManager, SimCLRArchSearchManager
 
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--path', type=str, default='/home/gaoyibo/codes/proxyless/record/default_exp/')
+parser.add_argument('--mode', type=str, default='supervised', choices=['supervised', 'SimCLR'])
 parser.add_argument('--resume', action='store_true')
 parser.add_argument('--debug', help='freeze the weight parameters', action='store_true')
 parser.add_argument('--manual_seed', default=0, type=int)
 
 """ run config """
 parser.add_argument('--n_epochs', type=int, default=200)
-parser.add_argument('--save_times', type=int, default=4)
+parser.add_argument('--save_times', type=int, default=None)
 parser.add_argument('--init_lr', type=float, default=0.025)
 parser.add_argument('--lr_schedule_type', type=str, default='cosine')
 
-parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10'])
+parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'SimCLR'])
 parser.add_argument('--train_batch_size', type=int, default=64)
 parser.add_argument('--test_batch_size', type=int, default=64)
 parser.add_argument('--valid_size', type=int, default=0.2)
@@ -72,6 +73,13 @@ if __name__ == '__main__':
 
     os.makedirs(args.path, exist_ok=True)
 
+    if args.mode == 'SimCLR':
+        args.dataset = 'SimCLR'
+    elif args.mode == 'supervised':
+        args.dataset = 'cifar10'
+    else:
+        raise NotImplementedError
+
     # build run config from args
     args.opt_param = {
         'momentum': args.momentum,
@@ -81,11 +89,11 @@ if __name__ == '__main__':
 
     # debug, adjust run_config
     if args.debug:
-        run_config.train_batch_size = 1024
-        run_config.test_batch_size = 1024
+        run_config.train_batch_size = 64
+        run_config.test_batch_size = 64
         run_config.valid_size = 0.8
         run_config.n_worker = 10
-        run_config.n_epochs = 12
+        run_config.n_epochs = 4
         args.warmup_epochs = 0
 
     # build net from args
@@ -98,7 +106,7 @@ if __name__ == '__main__':
         '7x7_MBConv3', '7x7_MBConv6',
     ]
     super_net = SuperProxylessNASNets(
-        width_stages=args.width_stages, n_cell_stages=args.n_cell_stages, stride_stages=args.stride_stages,
+        mode=args.mode, width_stages=args.width_stages, n_cell_stages=args.n_cell_stages, stride_stages=args.stride_stages,
         conv_candidates=args.conv_candidates, n_classes=run_config.data_provider.n_classes, width_mult=args.width_mult,
         bn_param=(args.bn_momentum, args.bn_eps), dropout_rate=args.dropout
     )
@@ -115,7 +123,10 @@ if __name__ == '__main__':
     arch_search_config = ArchSearchConfig(**args.__dict__)
 
     # arch search run manager
-    arch_search_run_manager = ArchSearchRunManager(args.path, super_net, run_config, arch_search_config)
+    if args.mode == 'supervised':
+        arch_search_run_manager = ArchSearchRunManager(args.path, super_net, run_config, arch_search_config)
+    elif args.mode == 'SimCLR':
+        arch_search_run_manager = SimCLRArchSearchManager(args.path, super_net, run_config, arch_search_config)
 
     # resume
     if args.resume:

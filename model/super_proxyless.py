@@ -7,9 +7,10 @@ from model.proxyless_nets import *
 
 class SuperProxylessNASNets(ProxylessNASNets):
 
-    def __init__(self, width_stages, n_cell_stages, conv_candidates, stride_stages,
+    def __init__(self, mode, width_stages, n_cell_stages, conv_candidates, stride_stages,
                  n_classes=1000, width_mult=1, bn_param=(0.1, 1e-3), dropout_rate=0):
         
+        self.mode = mode
         self.width_stages = width_stages
         self.n_cell_stages = n_cell_stages
         self.conv_candidates = conv_candidates
@@ -63,7 +64,10 @@ class SuperProxylessNASNets(ProxylessNASNets):
         # feature mix layer
         last_channel = make_divisible(1280 * width_mult, 8) if width_mult > 1.0 else 1280
         feature_mix_layer = ConvLayer(input_channel, last_channel, kernel_size=1, use_bn=True, act_func='relu6', ops_order='weight_bn_act')
-        classifier = LinearLayer(last_channel, n_classes, dropout_rate=dropout_rate)
+        if mode == 'supervised':
+            classifier = LinearLayer(last_channel, n_classes, dropout_rate=dropout_rate)
+        elif mode == 'SimCLR':
+            classifier = MLP(in_features=last_channel, out_features=128, dropout_rate=dropout_rate)
         super(SuperProxylessNASNets, self).__init__(first_conv, blocks, feature_mix_layer, classifier)
 
         # set bn param
@@ -71,7 +75,7 @@ class SuperProxylessNASNets(ProxylessNASNets):
 
     def get_clone_net(self):
         return SuperProxylessNASNets(
-            self.width_stages, self.n_cell_stages, self.conv_candidates, self.stride_stages,
+            self.mode, self.width_stages, self.n_cell_stages, self.conv_candidates, self.stride_stages,
             self.n_classes, self.width_mult, self.bn_param, self.dropout_rate)
 
     """ weight parameters, arch_parameters & binary gates """
@@ -170,12 +174,6 @@ class SuperProxylessNASNets(ProxylessNASNets):
                 m.set_chosen_op_active()
             except AttributeError:
                 print(type(m), ' do not support `set_chosen_op_active()`')
-
-    def set_active_via_net(self, net):
-        assert isinstance(net, SuperProxylessNASNets)
-        for self_m, net_m in zip(self.redundant_modules, net.redundant_modules):
-            self_m.active_index = copy.deepcopy(net_m.active_index)
-            self_m.inactive_index = copy.deepcopy(net_m.inactive_index)
 
     def convert_to_normal_net(self, net):
         net_queue = Queue()

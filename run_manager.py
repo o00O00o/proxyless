@@ -5,14 +5,11 @@
 import os
 import time
 import json
-from datetime import timedelta
-import numpy as np
-
-import torch.backends.cudnn as cudnn
 import torch.optim
-
+import numpy as np
 from utils import *
-
+from datetime import timedelta
+import torch.backends.cudnn as cudnn
 
 
 class RunConfig:
@@ -90,6 +87,9 @@ class RunConfig:
             if self.dataset == 'cifar10':
                 from data_providers import Cifar10DataProvider
                 self._data_provider = Cifar10DataProvider(**self.data_config)
+            elif self.dataset == 'SimCLR':
+                from data_providers import SimCLRDataProvider
+                self._data_provider = SimCLRDataProvider(**self.data_config)
             else:
                 raise ValueError('do not support: %s' % self.dataset)
         return self._data_provider

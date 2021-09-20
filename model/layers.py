@@ -112,9 +112,6 @@ class My2DLayer(MyModule):
     def build_from_config(config):
         raise NotImplementedError
 
-    def get_flops(self, x):
-        raise NotImplementedError
-
     @staticmethod
     def is_zero_layer():
         return False
@@ -186,9 +183,6 @@ class ConvLayer(My2DLayer):
     def build_from_config(config):
         return ConvLayer(**config)
 
-    def get_flops(self, x):
-        return count_conv_flop(self.conv, x), self.forward(x)
-
 
 class DepthConvLayer(My2DLayer):
 
@@ -254,13 +248,6 @@ class DepthConvLayer(My2DLayer):
     def build_from_config(config):
         return DepthConvLayer(**config)
 
-    def get_flops(self, x):
-        depth_flop = count_conv_flop(self.depth_conv, x)
-        x = self.depth_conv(x)
-        point_flop = count_conv_flop(self.point_conv, x)
-        x = self.point_conv(x)
-        return depth_flop + point_flop, self.forward(x)
-
 
 class PoolingLayer(My2DLayer):
 
@@ -313,9 +300,6 @@ class PoolingLayer(My2DLayer):
     def build_from_config(config):
         return PoolingLayer(**config)
 
-    def get_flops(self, x):
-        return 0, self.forward(x)
-
 
 class IdentityLayer(My2DLayer):
 
@@ -340,9 +324,6 @@ class IdentityLayer(My2DLayer):
     @staticmethod
     def build_from_config(config):
         return IdentityLayer(**config)
-
-    def get_flops(self, x):
-        return 0, self.forward(x)
 
 
 class LinearLayer(MyModule):
@@ -431,9 +412,6 @@ class LinearLayer(MyModule):
     def build_from_config(config):
         return LinearLayer(**config)
 
-    def get_flops(self, x):
-        return self.linear.weight.numel(), self.forward(x)
-
     @staticmethod
     def is_zero_layer():
         return False
@@ -506,21 +484,6 @@ class MBInvertedConvLayer(MyModule):
     def build_from_config(config):
         return MBInvertedConvLayer(**config)
 
-    def get_flops(self, x):
-        if self.inverted_bottleneck:
-            flop1 = count_conv_flop(self.inverted_bottleneck.conv, x)
-            x = self.inverted_bottleneck(x)
-        else:
-            flop1 = 0
-
-        flop2 = count_conv_flop(self.depth_conv.conv, x)
-        x = self.depth_conv(x)
-
-        flop3 = count_conv_flop(self.point_linear.conv, x)
-        x = self.point_linear(x)
-
-        return flop1 + flop2 + flop3, x
-
     @staticmethod
     def is_zero_layer():
         return False
@@ -556,9 +519,54 @@ class ZeroLayer(MyModule):
     def build_from_config(config):
         return ZeroLayer(**config)
 
-    def get_flops(self, x):
-        return 0, self.forward(x)
-
     @staticmethod
     def is_zero_layer():
         return True
+
+
+class MLP(MyModule):
+
+    def __init__(self, in_features, out_features, bias=True, use_bn=False, act_func=None, dropout_rate=0):
+        super(MLP, self).__init__()
+
+        self.in_features = in_features
+        self.out_features = out_features
+        self.bias = bias
+
+        self.use_bn = use_bn
+        self.act_func = act_func
+        self.dropout_rate = dropout_rate
+
+        self.linear1 = nn.Linear(in_features, in_features, self.bias)
+        self.relu = nn.ReLU()
+        self.linear2 = nn.Linear(in_features, out_features, self.bias)
+
+    def forward(self, x):
+        x = self.linear1(x)
+        x = self.relu(x)
+        x = self.linear2(x)
+        return x
+
+    @property
+    def module_str(self):
+        return '%dx%d_Linear' % (self.in_features, self.out_features)
+
+    @property
+    def config(self):
+        return {
+            'name': LinearLayer.__name__,
+            'in_features': self.in_features,
+            'out_features': self.out_features,
+            'bias': self.bias,
+            'use_bn': self.use_bn,
+            'act_func': self.act_func,
+            'dropout_rate': self.dropout_rate
+        }
+
+    @staticmethod
+    def build_from_config(config):
+        return LinearLayer(**config)
+
+    @staticmethod
+    def is_zero_layer():
+        return False

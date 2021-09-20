@@ -8,7 +8,7 @@ from model.proxyless_nets import ProxylessNASNets
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--path', type=str, default='/home/gaoyibo/codes/proxyless/record/default_exp/')
+parser.add_argument('--path', type=str, default='/home/gaoyibo/codes/proxyless/record/search_baseline/')
 parser.add_argument('--n_epochs', type=int, default=300)
 parser.add_argument('--train_from_scratch', action='store_true')
 parser.add_argument('--manual_seed', default=0, type=int)
@@ -20,6 +20,7 @@ def run_exp(args, exp_path):
     run_config_path = os.path.join(exp_path, 'run.config')
     run_config = json.load(open(run_config_path, 'r'))
     run_config['n_epochs'] = args.n_epochs
+    run_config['dataset'] = 'cifar10'
     run_config = RunConfig(**run_config)
 
     # prepare network
@@ -35,9 +36,11 @@ def run_exp(args, exp_path):
     if args.resume:
         run_manager.load_model()
     elif os.path.isfile(init_path) and not args.train_from_scratch:
-        checkpoint = torch.load(init_path)
-        checkpoint = checkpoint['state_dict']
-        run_manager.net.module.load_state_dict(checkpoint)
+        search_weight = torch.load(init_path)['state_dict']
+        train_weight = run_manager.net.module.state_dict()
+        for key in list(search_weight.keys()):
+            if not key.startswith('classifier'):
+                train_weight[key] = search_weight[key]
     else:
         print('Random initialization, train from scratch.')
 
@@ -68,8 +71,9 @@ if __name__ == '__main__':
 
     exp_path_list = []
     for dir_name in os.listdir(args.path):
-        if dir_name.startswith('learned_net'):
+        if dir_name.startswith('learned_net') and int(dir_name.split('_')[-1]) > 200:
             exp_path_list.append(os.path.join(args.path, dir_name))
     
+    exp_path_list = sorted(exp_path_list)
     for exp_path in exp_path_list:
         run_exp(args, exp_path)

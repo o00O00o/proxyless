@@ -81,8 +81,6 @@ class Cifar10DataProvider(DataProvider):
             transforms.ToTensor(),
             self.normalize,
         ]))
-        print('train: ' + str(len(train_dataset)))
-        print('test: ' + str(len(test_dataset)))
 
         if isinstance(valid_size, float):
             valid_size = int(valid_size * len(train_dataset))
@@ -95,6 +93,10 @@ class Cifar10DataProvider(DataProvider):
         self.train = DataLoader(train_dataset, train_batch_size, sampler=train_sampler, num_workers=n_worker)
         self.valid = DataLoader(valid_dataset, test_batch_size, sampler=valid_sampler, num_workers=n_worker)
         self.test = DataLoader(test_dataset, test_batch_size, num_workers=n_worker)
+
+        print('train: ' + str(len(self.train.sampler)))
+        print('valid: ' + str(len(self.valid.sampler)))
+        print('test: ' + str(len(self.test.sampler)))
     
     @property
     def normalize(self):

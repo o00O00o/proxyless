@@ -24,9 +24,6 @@ class MyModule(nn.Module):
     def build_from_config(config):
         raise NotImplementedError
 
-    def get_flops(self, x):
-        raise NotImplementedError
-
 
 class MyNetwork(MyModule):
 
@@ -45,9 +42,6 @@ class MyNetwork(MyModule):
     def build_from_config(config):
         raise NotImplementedError
 
-    def get_flops(self, x):
-        raise NotImplementedError
-
     def set_bn_param(self, momentum, eps):
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.BatchNorm1d):
@@ -64,18 +58,14 @@ class MyNetwork(MyModule):
                 }
         return None
 
-    def init_model(self, model_init, init_div_groups=False):
+    def init_model(self, model_init):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 if model_init == 'he_fout':
                     n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                    if init_div_groups:
-                        n /= m.groups
                     m.weight.data.normal_(0, math.sqrt(2. / n))
                 elif model_init == 'he_fin':
                     n = m.kernel_size[0] * m.kernel_size[1] * m.in_channels
-                    if init_div_groups:
-                        n /= m.groups
                     m.weight.data.normal_(0, math.sqrt(2. / n))
                 else:
                     raise NotImplementedError

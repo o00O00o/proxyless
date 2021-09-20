@@ -1,10 +1,6 @@
-# ProxylessNAS: Direct Neural Architecture Search on Target Task and Hardware
-# Han Cai, Ligeng Zhu, Song Han
-# International Conference on Learning Representations (ICLR), 2019.
-
-from queue import Queue
 import copy
 
+from queue import Queue
 from model.mix_op import *
 from model.proxyless_nets import *
 
@@ -13,6 +9,16 @@ class SuperProxylessNASNets(ProxylessNASNets):
 
     def __init__(self, width_stages, n_cell_stages, conv_candidates, stride_stages,
                  n_classes=1000, width_mult=1, bn_param=(0.1, 1e-3), dropout_rate=0):
+        
+        self.width_stages = width_stages
+        self.n_cell_stages = n_cell_stages
+        self.conv_candidates = conv_candidates
+        self.stride_stages = stride_stages
+        self.n_classes = n_classes
+        self.width_mult = width_mult
+        self.bn_param = bn_param
+        self.dropout_rate = dropout_rate
+
         self._redundant_modules = None
         self._unused_modules = None
 
@@ -22,15 +28,10 @@ class SuperProxylessNASNets(ProxylessNASNets):
             width_stages[i] = make_divisible(width_stages[i] * width_mult, 8)
 
         # first conv layer
-        first_conv = ConvLayer(
-            3, input_channel, kernel_size=3, stride=2, use_bn=True, act_func='relu6', ops_order='weight_bn_act'
-        )
+        first_conv = ConvLayer(3, input_channel, kernel_size=3, stride=2, use_bn=True, act_func='relu6', ops_order='weight_bn_act')
 
         # first block
-        first_block_conv = MixedEdge(candidate_ops=build_candidate_ops(
-            ['3x3_MBConv1'],
-            input_channel, first_cell_width, 1, 'weight_bn_act',
-        ), )
+        first_block_conv = MixedEdge(candidate_ops=build_candidate_ops(['3x3_MBConv1'], input_channel, first_cell_width, 1, 'weight_bn_act'))
         if first_block_conv.n_choices == 1:
             first_block_conv = first_block_conv.candidate_ops[0]
         first_block = MobileInvertedResidualBlock(first_block_conv, None)
@@ -49,9 +50,7 @@ class SuperProxylessNASNets(ProxylessNASNets):
                     modified_conv_candidates = conv_candidates + ['Zero']
                 else:
                     modified_conv_candidates = conv_candidates
-                conv_op = MixedEdge(candidate_ops=build_candidate_ops(
-                    modified_conv_candidates, input_channel, width, stride, 'weight_bn_act',
-                ), )
+                conv_op = MixedEdge(candidate_ops=build_candidate_ops(modified_conv_candidates, input_channel, width, stride, 'weight_bn_act'))
                 # shortcut
                 if stride == 1 and input_channel == width:
                     shortcut = IdentityLayer(input_channel, input_channel)
@@ -63,23 +62,17 @@ class SuperProxylessNASNets(ProxylessNASNets):
 
         # feature mix layer
         last_channel = make_divisible(1280 * width_mult, 8) if width_mult > 1.0 else 1280
-        feature_mix_layer = ConvLayer(
-            input_channel, last_channel, kernel_size=1, use_bn=True, act_func='relu6', ops_order='weight_bn_act',
-        )
-
+        feature_mix_layer = ConvLayer(input_channel, last_channel, kernel_size=1, use_bn=True, act_func='relu6', ops_order='weight_bn_act')
         classifier = LinearLayer(last_channel, n_classes, dropout_rate=dropout_rate)
         super(SuperProxylessNASNets, self).__init__(first_conv, blocks, feature_mix_layer, classifier)
 
         # set bn param
         self.set_bn_param(momentum=bn_param[0], eps=bn_param[1])
 
-    @property
-    def config(self):
-        raise ValueError('not needed')
-
-    @staticmethod
-    def build_from_config(config):
-        raise ValueError('not needed')
+    def get_clone_net(self):
+        return SuperProxylessNASNets(
+            self.width_stages, self.n_cell_stages, self.conv_candidates, self.stride_stages,
+            self.n_classes, self.width_mult, self.bn_param, self.dropout_rate)
 
     """ weight parameters, arch_parameters & binary gates """
 
@@ -184,17 +177,23 @@ class SuperProxylessNASNets(ProxylessNASNets):
             self_m.active_index = copy.deepcopy(net_m.active_index)
             self_m.inactive_index = copy.deepcopy(net_m.inactive_index)
 
-    def convert_to_normal_net(self):
-        queue = Queue()
-        queue.put(self)
-        while not queue.empty():
-            module = queue.get()
-            for m in module._modules:
-                child = module._modules[m]
-                if child is None:
+    def convert_to_normal_net(self, net):
+        net_queue = Queue()
+        self_queue = Queue()
+        net_queue.put(net)
+        self_queue.put(self)
+
+        while not net_queue.empty() and not self_queue.empty():
+            net_module = net_queue.get()
+            self_module = self_queue.get()
+            for (net_m, self_m) in zip(net_module._modules, self_module._modules):
+                net_child = net_module._modules[net_m]
+                self_child = self_module._modules[self_m]
+                if net_child is None:
                     continue
-                if child.__str__().startswith('MixedEdge'):
-                    module._modules[m] = child.chosen_op
+                if net_child.__str__().startswith('MixedEdge'):
+                    self_module._modules[self_m] = net_child.chosen_op
                 else:
-                    queue.put(child)
+                    net_queue.put(net_child)
+                    self_queue.put(self_child)
         return ProxylessNASNets(self.first_conv, list(self.blocks), self.feature_mix_layer, self.classifier)

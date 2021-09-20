@@ -17,14 +17,12 @@ from utils import *
 
 class RunConfig:
 
-    def __init__(self, n_epochs, init_lr, lr_schedule_type, lr_schedule_param,
-                 dataset, train_batch_size, test_batch_size, valid_size, n_worker,
-                 opt_type, opt_param, weight_decay, label_smoothing, no_decay_keys,
-                 model_init, init_div_groups, validation_frequency, print_frequency, **kwargs):
+    def __init__(self, n_epochs, init_lr, lr_schedule_type, dataset, train_batch_size, 
+                 test_batch_size, valid_size, n_worker, opt_type, opt_param, weight_decay, label_smoothing, no_decay_keys,
+                 model_init, validation_frequency, print_frequency, **kwargs):
         self.n_epochs = n_epochs
         self.init_lr = init_lr
         self.lr_schedule_type = lr_schedule_type
-        self.lr_schedule_param = lr_schedule_param
 
         self.dataset = dataset
         self.train_batch_size = train_batch_size
@@ -39,7 +37,6 @@ class RunConfig:
         self.no_decay_keys = no_decay_keys
 
         self.model_init = model_init
-        self.init_div_groups = init_div_groups
         self.validation_frequency = validation_frequency
         self.print_frequency = print_frequency
 
@@ -178,7 +175,7 @@ class RunManager:
         self.start_epoch = 0
 
         # initialize model (default)
-        self.net.init_model(run_config.model_init, run_config.init_div_groups)
+        self.net.init_model(run_config.model_init)
 
         # move network to GPU if available
         if torch.cuda.is_available():
@@ -188,7 +185,6 @@ class RunManager:
             cudnn.benchmark = True
         else:
             raise ValueError
-            # self.device = torch.device('cpu')
 
         self.criterion = nn.CrossEntropyLoss()
         if self.run_config.no_decay_keys:

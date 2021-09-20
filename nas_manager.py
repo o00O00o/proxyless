@@ -1,6 +1,8 @@
+from model.super_proxyless import SuperProxylessNASNets
 import os
 import time
 import json
+import copy
 import torch
 import numpy as np
 from utils import *
@@ -232,7 +234,7 @@ class ArchSearchRunManager:
                 checkpoint['warmup_epoch'] = epoch,
             self.run_manager.save_model(checkpoint, model_name='warmup.pth.tar')
 
-    def train(self, fix_net_weights=False):
+    def train(self, save_times, fix_net_weights=False):
         data_loader = self.run_manager.run_config.train_loader
         nBatch = len(data_loader)
         if fix_net_weights:
@@ -247,6 +249,9 @@ class ArchSearchRunManager:
         )
 
         update_schedule = self.arch_search_config.get_update_schedule(nBatch)
+        n_epochs = self.run_manager.run_config.n_epochs
+        # save_stamps = np.linspace(n_epochs // 4, n_epochs, save_times).astype(int)
+        save_stamps = list(range(50, n_epochs, 50))
 
         for epoch in range(self.run_manager.start_epoch, self.run_manager.run_config.n_epochs):
             print('\n', '-' * 30, 'Train epoch: %d' % (epoch + 1), '-' * 30, '\n')
@@ -263,9 +268,7 @@ class ArchSearchRunManager:
             for i, (images, labels) in enumerate(data_loader):
                 data_time.update(time.time() - end)
                 # lr
-                lr = self.run_manager.run_config.adjust_learning_rate(
-                    self.run_manager.optimizer, epoch, batch=i, nBatch=nBatch
-                )
+                lr = self.run_manager.run_config.adjust_learning_rate(self.run_manager.optimizer, epoch, batch=i, nBatch=nBatch)
                 # network entropy
                 net_entropy = self.net.entropy()
                 entropy.update(net_entropy.data.item() / arch_param_num, 1)
@@ -278,9 +281,7 @@ class ArchSearchRunManager:
                     output = self.run_manager.net(images)  # forward (DataParallel)
                     # loss
                     if self.run_manager.run_config.label_smoothing > 0:
-                        loss = cross_entropy_with_label_smoothing(
-                            output, labels, self.run_manager.run_config.label_smoothing
-                        )
+                        loss = cross_entropy_with_label_smoothing(output, labels, self.run_manager.run_config.label_smoothing)
                     else:
                         loss = self.run_manager.criterion(output, labels)
                     # measure accuracy and record loss
@@ -301,8 +302,7 @@ class ArchSearchRunManager:
                         start_time = time.time()
                         arch_loss = self.gradient_step()
                         used_time = time.time() - start_time
-                        log_str = 'Architecture [%d-%d]\t Time %.4f\t Loss %.4f' % \
-                                    (epoch + 1, i, used_time, arch_loss)
+                        log_str = 'Architecture [%d-%d]\t Time %.4f\t Loss %.4f' % (epoch + 1, i, used_time, arch_loss)
                         self.write_log(log_str, prefix='gradient', should_print=False)
                 # measure elapsed time
                 batch_time.update(time.time() - end)
@@ -345,19 +345,19 @@ class ArchSearchRunManager:
                 'state_dict': self.net.state_dict()
             })
 
-        # convert to normal network according to architecture parameters
-        normal_net = self.net.cpu().convert_to_normal_net()
-        print('Total training params: %.2fM' % (count_parameters(normal_net) / 1e6))
-        os.makedirs(os.path.join(self.run_manager.path, 'learned_net'), exist_ok=True)
-        json.dump(normal_net.config, open(os.path.join(self.run_manager.path, 'learned_net/net.config'), 'w'), indent=4)
-        json.dump(
-            self.run_manager.run_config.config,
-            open(os.path.join(self.run_manager.path, 'learned_net/run.config'), 'w'), indent=4,
-        )
-        torch.save(
-            {'state_dict': normal_net.state_dict(), 'dataset': self.run_manager.run_config.dataset},
-            os.path.join(self.run_manager.path, 'learned_net/init')
-        )
+            if epoch + 1 in save_stamps:
+                # convert to normal network according to architecture parameters
+                new_net = self.net.get_clone_net()
+                normal_net = new_net.convert_to_normal_net(self.net)
+                print('Total training params: %.2fM' % (count_parameters(normal_net) / 1e6))
+                learned_net_path = os.path.join(self.run_manager.path, 'learned_net_{}'.format(epoch + 1))
+                os.makedirs(learned_net_path, exist_ok=True)
+                json.dump(normal_net.config, open(os.path.join(learned_net_path, 'net.config'), 'w'), indent=4)
+                json.dump(self.run_manager.run_config.config,open(os.path.join(learned_net_path, 'run.config'), 'w'), indent=4)
+                torch.save(
+                    {'state_dict': normal_net.state_dict(), 'dataset': self.run_manager.run_config.dataset},
+                    os.path.join(learned_net_path, 'init')
+                )
 
     def gradient_step(self):
         assert isinstance(self.arch_search_config, ArchSearchConfig)

@@ -1,7 +1,3 @@
-# ProxylessNAS: Direct Neural Architecture Search on Target Task and Hardware
-# Han Cai, Ligeng Zhu, Song Han
-# International Conference on Learning Representations (ICLR), 2019.
-
 import numpy as np
 
 from torch.nn.parameter import Parameter
@@ -42,9 +38,7 @@ def build_candidate_ops(candidate_ops, in_channels, out_channels, stride, ops_or
         '7x7_MBConv6': lambda in_C, out_C, S: MBInvertedConvLayer(in_C, out_C, 7, S, 6),
     })
 
-    return [
-        name2ops[name](in_channels, out_channels, stride) for name in candidate_ops
-    ]
+    return [name2ops[name](in_channels, out_channels, stride) for name in candidate_ops]
 
 
 class MixedEdge(MyModule):
@@ -108,8 +102,6 @@ class MixedEdge(MyModule):
         self.inactive_index = [_i for _i in range(0, chosen_idx)] + \
                               [_i for _i in range(chosen_idx + 1, self.n_choices)]
 
-    """ """
-
     def forward(self, x):
         if MixedEdge.MODE == 'full' or MixedEdge.MODE == 'two':
             output = 0
@@ -158,16 +150,6 @@ class MixedEdge(MyModule):
     @staticmethod
     def build_from_config(config):
         raise ValueError('not needed')
-
-    def get_flops(self, x):
-        """ Only active paths taken into consideration when calculating FLOPs """
-        flops = 0
-        for i in self.active_index:
-            delta_flop, _ = self.candidate_ops[i].get_flops(x)
-            flops += delta_flop
-        return flops, self.forward(x)
-
-    """ """
 
     def binarize(self):
         """ prepare: active_index, inactive_index, AP_path_wb, log_prob (optional), current_prob_over_ops (optional) """

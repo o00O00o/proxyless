@@ -1,7 +1,3 @@
-# ProxylessNAS: Direct Neural Architecture Search on Target Task and Hardware
-# Han Cai, Ligeng Zhu, Song Han
-# International Conference on Learning Representations (ICLR), 2019.
-
 from model.layers import *
 
 
@@ -44,15 +40,6 @@ class MobileInvertedResidualBlock(MyModule):
         shortcut = set_layer_from_config(config['shortcut'])
         return MobileInvertedResidualBlock(mobile_inverted_conv, shortcut)
 
-    def get_flops(self, x):
-        flops1, conv_x = self.mobile_inverted_conv.get_flops(x)
-        if self.shortcut:
-            flops2, _ = self.shortcut.get_flops(x)
-        else:
-            flops2 = 0
-
-        return flops1 + flops2, self.forward(x)
-
 
 class ProxylessNASNets(MyNetwork):
 
@@ -88,9 +75,7 @@ class ProxylessNASNets(MyNetwork):
             'name': ProxylessNASNets.__name__,
             'bn': self.get_bn_param(),
             'first_conv': self.first_conv.config,
-            'blocks': [
-                block.config for block in self.blocks
-            ],
+            'blocks': [block.config for block in self.blocks],
             'feature_mix_layer': self.feature_mix_layer.config,
             'classifier': self.classifier.config,
         }
@@ -111,20 +96,3 @@ class ProxylessNASNets(MyNetwork):
             net.set_bn_param(momentum=0.1, eps=1e-3)
 
         return net
-
-    def get_flops(self, x):
-        flop, x = self.first_conv.get_flops(x)
-
-        for block in self.blocks:
-            delta_flop, x = block.get_flops(x)
-            flop += delta_flop
-
-        delta_flop, x = self.feature_mix_layer.get_flops(x)
-        flop += delta_flop
-
-        x = self.global_avg_pooling(x)
-        x = x.view(x.size(0), -1)  # flatten
-
-        delta_flop, x = self.classifier.get_flops(x)
-        flop += delta_flop
-        return flop, x

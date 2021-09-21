@@ -155,8 +155,9 @@ class RunConfig:
                     {'params': net_params[1], 'weight_decay': 0},
                 ], lr=self.init_lr, momentum=momentum, nesterov=nesterov)
             else:
-                optimizer = torch.optim.SGD(net_params, self.init_lr, momentum=momentum, nesterov=nesterov,
-                                            weight_decay=self.weight_decay)
+                optimizer = torch.optim.SGD(net_params, self.init_lr, momentum=momentum, nesterov=nesterov, weight_decay=self.weight_decay)
+        elif self.opt_type == 'adam':
+            optimizer = torch.optim.Adam(net_params, lr=self.init_lr, weight_decay=self.weight_decay)
         else:
             raise NotImplementedError
         return optimizer

@@ -48,9 +48,7 @@ class ArchSearchConfig:
         :return: arch_optimizer
         """
         if self.opt_type == 'adam':
-            return torch.optim.Adam(
-                params, self.lr, weight_decay=self.weight_decay, **self.opt_param
-            )
+            return torch.optim.Adam(params, self.lr, weight_decay=self.weight_decay, **self.opt_param)
         else:
             raise NotImplementedError
     

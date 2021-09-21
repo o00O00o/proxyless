@@ -9,7 +9,7 @@ from model.proxyless_nets import ProxylessNASNets
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--path', type=str, default='/home/gaoyibo/codes/proxyless/record/search_baseline/')
-parser.add_argument('--n_epochs', type=int, default=300)
+parser.add_argument('--n_epochs', type=int, default=600)
 parser.add_argument('--train_from_scratch', action='store_true')
 parser.add_argument('--manual_seed', default=0, type=int)
 parser.add_argument('--resume', action='store_true')

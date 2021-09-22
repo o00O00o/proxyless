@@ -1,4 +1,5 @@
 from model.layers import *
+import json
 
 
 class MobileInvertedResidualBlock(MyModule):
@@ -81,10 +82,16 @@ class ProxylessNASNets(MyNetwork):
         }
 
     @staticmethod
-    def build_from_config(config):
+    def build_from_config(config_path, is_supervised):
+        config = json.load(open(config_path, 'r'))
         first_conv = set_layer_from_config(config['first_conv'])
         feature_mix_layer = set_layer_from_config(config['feature_mix_layer'])
+
+        if is_supervised and config['classifier']['name'] == 'MLP':
+            config['classifier']['name'] = 'LinearLayer'
+            config['classifier']['out_features'] = 10
         classifier = set_layer_from_config(config['classifier'])
+
         blocks = []
         for block_config in config['blocks']:
             blocks.append(MobileInvertedResidualBlock.build_from_config(block_config))

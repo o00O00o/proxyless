@@ -65,38 +65,36 @@ class DataProvider:
 
 
 class Cifar10DataProvider(DataProvider):
-    def __init__(self, save_path, train_batch_size, test_batch_size, valid_size, n_worker):
+    def __init__(self, data_path, batch_size, train_ratio, n_worker):
 
-        self._save_path = save_path
+        self._data_path = data_path
 
-        train_dataset = CIFAR10(save_path, train=True, download=True, transform=transforms.Compose([
+        train_dataset = CIFAR10(data_path, train=True, download=True, transform=transforms.Compose([
             transforms.RandomCrop(self.image_size, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             self.normalize,
         ]))
 
-        valid_dataset = CIFAR10(save_path, train=True, download=True, transform=transforms.Compose([
+        valid_dataset = CIFAR10(data_path, train=True, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
             self.normalize,
         ]))
 
-        test_dataset = CIFAR10(save_path, train=False, download=True, transform=transforms.Compose([
+        test_dataset = CIFAR10(data_path, train=False, download=True, transform=transforms.Compose([
             transforms.ToTensor(),
             self.normalize,
         ]))
 
-        if isinstance(valid_size, float):
-            valid_size = int(valid_size * len(train_dataset))
-        else:
-            assert isinstance(valid_size, int), 'invalid valid_size: %s' % valid_size
+        valid_size = int(len(train_dataset) - train_ratio * len(train_dataset))
+        print(valid_size)
         
         train_indexes, valid_indexes = self.random_sample_valid_set(train_dataset.targets, valid_size, self.n_classes)
         train_sampler, valid_sampler = SubsetRandomSampler(train_indexes), SubsetRandomSampler(valid_indexes)
 
-        self.train = DataLoader(train_dataset, train_batch_size, sampler=train_sampler, num_workers=n_worker)
-        self.valid = DataLoader(valid_dataset, test_batch_size, sampler=valid_sampler, num_workers=n_worker)
-        self.test = DataLoader(test_dataset, test_batch_size, num_workers=n_worker)
+        self.train = DataLoader(train_dataset, batch_size, sampler=train_sampler, num_workers=n_worker)
+        self.valid = DataLoader(valid_dataset, batch_size, sampler=valid_sampler, num_workers=n_worker)
+        self.test = DataLoader(test_dataset, batch_size, num_workers=n_worker)
 
         print('train: ' + str(len(self.train.sampler)))
         print('valid: ' + str(len(self.valid.sampler)))
@@ -115,15 +113,15 @@ class Cifar10DataProvider(DataProvider):
         return 10
     
     @property
-    def save_path(self):
-        if self._save_path is None:
-            self._save_path = '/home/gaoyibo/Datasets/cifar-10/'
-        return self._save_path
+    def data_path(self):
+        if self._data_path is None:
+            self._data_path = '/home/gaoyibo/Datasets/cifar-10/'
+        return self._data_path
 
 
 class SimCLRDataProvider(DataProvider):
-    def __init__(self, save_path, train_batch_size, test_batch_size, valid_size, n_worker, s=1):
-        self._save_path = save_path
+    def __init__(self, data_path, batch_size, train_ratio, n_worker, s=1):
+        self._data_path = data_path
 
         color_jitter = transforms.ColorJitter(0.8 * s, 0.8 * s, 0.8 * s, 0.2 * s)
         data_transforms = transforms.Compose([transforms.RandomResizedCrop(size=self.image_size),
@@ -133,14 +131,14 @@ class SimCLRDataProvider(DataProvider):
                                               GaussianBlur(kernel_size=int(0.1 * self.image_size)),
                                               transforms.ToTensor()])
 
-        train_dataset = CIFAR10(save_path, train=True, download=True, transform=ContrastiveLearningViewGenerator(data_transforms, n_views=2))
+        train_dataset = CIFAR10(data_path, train=True, download=True, transform=ContrastiveLearningViewGenerator(data_transforms, n_views=2))
 
-        valid_size = int(valid_size * len(train_dataset))
+        valid_size = int(len(train_dataset) - train_ratio * len(train_dataset))
         train_indexes, valid_indexes = self.random_sample_valid_set(train_dataset.targets, valid_size, self.n_classes)
         train_sampler, valid_sampler = SubsetRandomSampler(train_indexes), SubsetRandomSampler(valid_indexes)
 
-        self.train = DataLoader(train_dataset, train_batch_size, sampler=train_sampler, num_workers=n_worker)
-        self.valid = DataLoader(train_dataset, train_batch_size, sampler=valid_sampler, num_workers=n_worker)
+        self.train = DataLoader(train_dataset, batch_size, sampler=train_sampler, num_workers=n_worker)
+        self.valid = DataLoader(train_dataset, batch_size, sampler=valid_sampler, num_workers=n_worker)
 
         print('train: ' + str(len(self.train.sampler)))
         print('valid: ' + str(len(self.valid.sampler)))
@@ -154,10 +152,10 @@ class SimCLRDataProvider(DataProvider):
         return 10
 
     @property
-    def save_path(self):
-        if self._save_path is None:
-            self._save_path = '/home/gaoyibo/Datasets/cifar-10/'
-        return self._save_path
+    def data_path(self):
+        if self._data_path is None:
+            self._data_path = '/home/gaoyibo/Datasets/cifar-10/'
+        return self._data_path
 
 
 if __name__ == '__main__':

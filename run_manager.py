@@ -2,6 +2,7 @@
 # Han Cai, Ligeng Zhu, Song Han
 # International Conference on Learning Representations (ICLR), 2019.
 
+from model.proxyless_nets import ProxylessNASNets
 import os
 import time
 import json
@@ -14,26 +15,22 @@ import torch.backends.cudnn as cudnn
 
 class RunConfig:
 
-    def __init__(self, n_epochs, init_lr, lr_schedule_type, dataset, train_batch_size, 
-                 test_batch_size, valid_size, n_worker, opt_type, opt_param, weight_decay, label_smoothing, no_decay_keys,
-                 model_init, validation_frequency, print_frequency, **kwargs):
+    def __init__(self, data_path, dataset, n_epochs, init_lr, lr_schedule_type, batch_size, 
+                 train_ratio, n_worker, label_smoothing, model_init, validation_frequency, 
+                 print_frequency, **kwargs):
+        
+        self.data_path = data_path
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.train_ratio = train_ratio
+        self.n_worker = n_worker
+
         self.n_epochs = n_epochs
         self.init_lr = init_lr
         self.lr_schedule_type = lr_schedule_type
-
-        self.dataset = dataset
-        self.train_batch_size = train_batch_size
-        self.test_batch_size = test_batch_size
-        self.valid_size = valid_size
-        self.n_worker = n_worker
-
-        self.opt_type = opt_type
-        self.opt_param = opt_param
-        self.weight_decay = weight_decay
         self.label_smoothing = label_smoothing
-        self.no_decay_keys = no_decay_keys
-
         self.model_init = model_init
+
         self.validation_frequency = validation_frequency
         self.print_frequency = print_frequency
 
@@ -48,23 +45,20 @@ class RunConfig:
                 config[key] = self.__dict__[key]
         return config
 
-    def copy(self):
-        return RunConfig(**self.config)
-
     """ learning rate """
 
-    def _calc_learning_rate(self, epoch, batch=0, nBatch=None):
+    def _calc_learning_rate(self, epoch, n_epochs, batch=0, nBatch=None):
         if self.lr_schedule_type == 'cosine':
-            T_total = self.n_epochs * nBatch
+            T_total = n_epochs * nBatch
             T_cur = epoch * nBatch + batch
             lr = 0.5 * self.init_lr * (1 + math.cos(math.pi * T_cur / T_total))
         else:
             raise ValueError('do not support: %s' % self.lr_schedule_type)
         return lr
 
-    def adjust_learning_rate(self, optimizer, epoch, batch=0, nBatch=None):
+    def adjust_learning_rate(self, optimizer, epoch, n_epochs, batch=0, nBatch=None):
         """ adjust learning of a given optimizer and return the new learning rate """
-        new_lr = self._calc_learning_rate(epoch, batch, nBatch)
+        new_lr = self._calc_learning_rate(epoch, n_epochs, batch, nBatch)
         for param_group in optimizer.param_groups:
             param_group['lr'] = new_lr
         return new_lr
@@ -74,10 +68,9 @@ class RunConfig:
     @property
     def data_config(self):
         return {
-            'save_path': '/home/gaoyibo/Datasets/cifar-10/',
-            'train_batch_size': self.train_batch_size,
-            'test_batch_size': self.test_batch_size,
-            'valid_size': self.valid_size,
+            'data_path': self.data_path,
+            'batch_size': self.batch_size,
+            'train_ratio': self.train_ratio,
             'n_worker': self.n_worker,
         }
 
@@ -94,9 +87,10 @@ class RunConfig:
                 raise ValueError('do not support: %s' % self.dataset)
         return self._data_provider
 
-    @data_provider.setter
-    def data_provider(self, val):
-        self._data_provider = val
+    def change_dataset(self, dataset):
+        if self.dataset != dataset:
+            self._data_provider = None
+            self.dataset = dataset
 
     @property
     def train_loader(self):
@@ -146,20 +140,7 @@ class RunConfig:
     """ optimizer """
 
     def build_optimizer(self, net_params):
-        if self.opt_type == 'sgd':
-            opt_param = {} if self.opt_param is None else self.opt_param
-            momentum, nesterov = opt_param.get('momentum', 0.9), opt_param.get('nesterov', True)
-            if self.no_decay_keys:
-                optimizer = torch.optim.SGD([
-                    {'params': net_params[0], 'weight_decay': self.weight_decay},
-                    {'params': net_params[1], 'weight_decay': 0},
-                ], lr=self.init_lr, momentum=momentum, nesterov=nesterov)
-            else:
-                optimizer = torch.optim.SGD(net_params, self.init_lr, momentum=momentum, nesterov=nesterov, weight_decay=self.weight_decay)
-        elif self.opt_type == 'adam':
-            optimizer = torch.optim.Adam(net_params, lr=self.init_lr, weight_decay=self.weight_decay)
-        else:
-            raise NotImplementedError
+        optimizer = torch.optim.Adam(net_params, lr=self.init_lr)
         return optimizer
 
 
@@ -181,21 +162,13 @@ class RunManager:
         # move network to GPU if available
         if torch.cuda.is_available():
             self.device = torch.device('cuda:0')
-            self.net = torch.nn.DataParallel(self.net)
             self.net.to(self.device)
             cudnn.benchmark = True
         else:
             raise ValueError
 
         self.criterion = nn.CrossEntropyLoss()
-        if self.run_config.no_decay_keys:
-            keys = self.run_config.no_decay_keys.split('#')
-            self.optimizer = self.run_config.build_optimizer([
-                self.net.module.get_parameters(keys, mode='exclude'),  # parameters with weight decay
-                self.net.module.get_parameters(keys, mode='include'),  # parameters without weight decay
-            ])
-        else:
-            self.optimizer = self.run_config.build_optimizer(self.net.module.weight_parameters())
+        self.optimizer = self.run_config.build_optimizer(self.net.weight_parameters())
 
     """ save path and log path """
 
@@ -219,7 +192,7 @@ class RunManager:
 
     def save_model(self, checkpoint=None, is_best=False, model_name=None):
         if checkpoint is None:
-            checkpoint = {'state_dict': self.net.module.state_dict()}
+            checkpoint = {'state_dict': self.net.state_dict()}
 
         if model_name is None:
             model_name = 'checkpoint.pth.tar'
@@ -242,7 +215,7 @@ class RunManager:
                 model_fname = fin.readline()
                 if model_fname[-1] == '\n':
                     model_fname = model_fname[:-1]
-        # noinspection PyBroadException
+
         try:
             if model_fname is None or not os.path.exists(model_fname):
                 model_fname = '%s/checkpoint.pth.tar' % self.save_path
@@ -256,7 +229,7 @@ class RunManager:
             else:
                 checkpoint = torch.load(model_fname, map_location='cpu')
 
-            self.net.module.load_state_dict(checkpoint['state_dict'])
+            self.net.load_state_dict(checkpoint['state_dict'])
             # set new manual seed
             new_manual_seed = int(time.time())
             torch.manual_seed(new_manual_seed)
@@ -280,7 +253,7 @@ class RunManager:
         """ dump run_config and net_config to the model_folder """
         os.makedirs(self.path, exist_ok=True)
         net_save_path = os.path.join(self.path, 'net.config')
-        json.dump(self.net.module.config, open(net_save_path, 'w'), indent=4)
+        json.dump(self.net.config, open(net_save_path, 'w'), indent=4)
         if print_info:
             print('Network configs dump to %s' % net_save_path)
 
@@ -306,31 +279,25 @@ class RunManager:
         if should_print:
             print(log_str)
 
-    def validate(self, is_test=True, net=None, use_train_mode=False, return_top5=False):
-        if is_test:
-            data_loader = self.run_config.test_loader
-        else:
-            data_loader = self.run_config.valid_loader
-
-        if net is None:
-            net = self.net
+    def validate(self, is_test=True, use_train_mode=False, return_top5=False):
+        data_loader = self.run_config.valid_loader
 
         if use_train_mode:
-            net.train()
+            self.net.train()
         else:
-            net.eval()
+            self.net.eval()
+        
         batch_time = AverageMeter()
         losses = AverageMeter()
         top1 = AverageMeter()
         top5 = AverageMeter()
 
         end = time.time()
-        # noinspection PyUnresolvedReferences
         with torch.no_grad():
             for i, (images, labels) in enumerate(data_loader):
                 images, labels = images.to(self.device), labels.to(self.device)
                 # compute output
-                output = net(images)
+                output = self.net(images)
                 loss = self.criterion(output, labels)
                 # measure accuracy and record loss
                 acc1, acc5 = accuracy(output, labels, topk=(1, 5))
@@ -423,7 +390,7 @@ class RunManager:
 
             end = time.time()
             train_top1, train_top5 = self.train_one_epoch(
-                lambda i: self.run_config.adjust_learning_rate(self.optimizer, epoch, i, nBatch),
+                lambda i: self.run_config.adjust_learning_rate(self.optimizer, epoch, self.run_config.n_epochs, i, nBatch),
                 lambda i, batch_time, data_time, losses, top1, top5, new_lr:
                 train_log_func(epoch, i, batch_time, data_time, losses, top1, top5, new_lr),
             )
@@ -452,5 +419,63 @@ class RunManager:
                 'epoch': epoch,
                 'best_acc': self.best_acc,
                 'optimizer': self.optimizer.state_dict(),
-                'state_dict': self.net.module.state_dict(),
+                'state_dict': self.net.state_dict(),
             }, is_best=is_best)
+
+
+    def weight_stablize(self, mode, stablize_epochs, end_epochs=800):
+        init_path = os.path.join(self.path, 'init')
+        checkpoint = torch.load(init_path)
+        self.net.load_state_dict(checkpoint['state_dict'])
+        
+        start_epoch = checkpoint['epoch'] + 1
+        nBatch = len(self.run_config.train_loader)
+
+        losses = AverageMeter()
+        top1 = AverageMeter()
+        top5 = AverageMeter()
+
+        # switch to train mode
+        self.net.train()
+        epoch_count = 0
+
+        for epoch in range(start_epoch, start_epoch + stablize_epochs):
+            epoch_count += 1
+            for i, (images, labels) in enumerate(self.run_config.train_loader):
+                new_lr = self.run_config.adjust_learning_rate(self.optimizer, epoch, end_epochs, i, nBatch)
+
+                if mode == 'supervised':
+                    images, labels = images.to(self.device), labels.to(self.device)
+                    logits = self.net(images)
+                    if self.run_config.label_smoothing > 0:
+                        loss = cross_entropy_with_label_smoothing(logits, labels, self.run_config.label_smoothing)
+                    else:
+                        loss = self.criterion(logits, labels)
+                elif mode == 'SimCLR':
+                    images = torch.cat(images, dim=0)
+                    images = images.to(self.device)
+                    features = self.net(images)
+                    logits, labels = info_nce_loss(features, self.device)
+                    loss = self.criterion(logits, labels)
+                else:
+                    raise NotImplementedError
+
+                # measure accuracy and record loss
+                acc1, acc5 = accuracy(logits, labels, topk=(1, 5))
+                losses.update(loss, images.size(0))
+                top1.update(acc1[0], images.size(0))
+                top5.update(acc5[0], images.size(0))
+
+                # compute gradient and do SGD step
+                self.net.zero_grad()  # or self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                 
+                if i % self.run_config.print_frequency == 0 or i + 1 == len(self.run_config.train_loader):
+                    batch_log = 'Stablize [{0}/{1}][{2}/{3}]\t' \
+                                'Loss {losses.val:.4f} ({losses.avg:.4f})\t' \
+                                'Top-1 acc {top1.val:.3f} ({top1.avg:.3f})\t' \
+                                'Top-5 acc {top5.val:.3f} ({top5.avg:.3f})\tlr {lr:.5f}'. \
+                                format(epoch_count, stablize_epochs, i, nBatch - 1, losses=losses, top1=top1, top5=top5, lr=new_lr)
+                    print(batch_log)
+        

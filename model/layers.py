@@ -18,6 +18,7 @@ def set_layer_from_config(layer_config):
         LinearLayer.__name__: LinearLayer,
         MBInvertedConvLayer.__name__: MBInvertedConvLayer,
         ZeroLayer.__name__: ZeroLayer,
+        MLP.__name__: MLP,
     }
 
     layer_name = layer_config.pop('name')
@@ -549,12 +550,12 @@ class MLP(MyModule):
 
     @property
     def module_str(self):
-        return '%dx%d_Linear' % (self.in_features, self.out_features)
+        return '%dx%d_MLP' % (self.in_features, self.out_features)
 
     @property
     def config(self):
         return {
-            'name': LinearLayer.__name__,
+            'name': MLP.__name__,
             'in_features': self.in_features,
             'out_features': self.out_features,
             'bias': self.bias,
@@ -565,7 +566,7 @@ class MLP(MyModule):
 
     @staticmethod
     def build_from_config(config):
-        return LinearLayer(**config)
+        return MLP(**config)
 
     @staticmethod
     def is_zero_layer():

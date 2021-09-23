@@ -3,7 +3,7 @@ import json
 import torch
 import argparse
 import numpy as np
-from torch.optim import optimizer
+from shutil import copytree
 from run_manager import RunConfig, RunManager
 from model.proxyless_nets import ProxylessNASNets
 
@@ -33,6 +33,18 @@ parser.add_argument('--print_frequency', type=int, default=100)
 
 
 def run_exp(args, exp_path):
+
+    # generate a new dir for training
+    if args.weight_preserve:
+        weight_status = 'weight_preserve'
+    else:
+        weight_status = 'train_from_scratch'
+    exp_name = args.mode + '_' + weight_status
+    parent_path = os.path.realpath(os.path.join(args.path, os.pardir))
+    new_path = os.path.join(parent_path, exp_name)
+    copytree(args.path, new_path)
+    args.path = new_path
+
     # prepare run config
     run_config = RunConfig(**args.__dict__)
 
@@ -91,12 +103,11 @@ if __name__ == '__main__':
 
     assert os.path.exists(args.path), print('Exp record not found.')
 
-    # exp_path_list = []
-    # for dir_name in os.listdir(args.path):
-    #     if dir_name.startswith('learned_net'):
-    #         exp_path_list.append(os.path.join(args.path, dir_name))
+    exp_path_list = []
+    for dir_name in os.listdir(args.path):
+        if dir_name.startswith('learned_net'):
+            exp_path_list.append(os.path.join(args.path, dir_name))
     
-    # exp_path_list = sorted(exp_path_list)
-    # for exp_path in exp_path_list:
-    #     run_exp(args, exp_path)
-    run_exp(args, args.path)
+    exp_path_list = sorted(exp_path_list, key=lambda path: int(path.split('_')[-1]))
+    for exp_path in exp_path_list:
+        run_exp(args, exp_path)

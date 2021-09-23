@@ -11,14 +11,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--path', type=str, default='/home/gaoyibo/codes/proxyless/record/default_exp/')
 parser.add_argument('--mode', type=str, default='supervised', choices=['supervised', 'SimCLR'])
 parser.add_argument('--resume', action='store_true')
-parser.add_argument('--save_times', type=int, default=None)
+parser.add_argument('--save_times', type=int, default=8)
 parser.add_argument('--debug', help='freeze the weight parameters', action='store_true')
 parser.add_argument('--manual_seed', default=0, type=int)
 
 """ run config """
 parser.add_argument('--data_path', type=str, default='/home/gaoyibo/Datasets/cifar-10/')
 parser.add_argument('--dataset', type=str, default='cifar10', choices=['cifar10', 'SimCLR'])
-parser.add_argument('--batch_size', type=int, default=64)
+parser.add_argument('--batch_size', type=int, default=256)
 parser.add_argument('--train_ratio', type=int, default=0.8)
 parser.add_argument('--n_worker', type=int, default=16)
 

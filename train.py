@@ -10,11 +10,12 @@ from model.proxyless_nets import ProxylessNASNets
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--path', type=str, default='/home/gaoyibo/codes/proxyless/record/search_baseline/')
-parser.add_argument('--weight_preserve', action='store_true')
 parser.add_argument('--manual_seed', default=0, type=int)
 parser.add_argument('--resume', action='store_true')
-parser.add_argument('--stablize_epochs', type=int, default=1)
 parser.add_argument('--mode', type=str, default='SimCLR', choices=['supervised', 'SimCLR'])
+parser.add_argument('--weight_preserve', action='store_true')
+parser.add_argument('--stablize_epochs', type=int, default=1)
+parser.add_argument('--stablize_batch_size', type=int, default=256)
 
 """ run config """
 parser.add_argument('--data_path', type=str, default='/home/gaoyibo/Datasets/cifar-10/')
@@ -34,21 +35,8 @@ parser.add_argument('--print_frequency', type=int, default=100)
 
 def run_exp(args, exp_path):
 
-    # generate a new dir for training
-    if args.weight_preserve:
-        weight_status = 'weight_preserve'
-    else:
-        weight_status = 'train_from_scratch'
-    exp_name = args.mode + '_' + weight_status
-    parent_path = os.path.realpath(os.path.join(args.path, os.pardir))
-    new_path = os.path.join(parent_path, exp_name)
-    copytree(args.path, new_path)
-    args.path = new_path
-
-    # prepare run config
-    run_config = RunConfig(**args.__dict__)
-
     # prepare network
+    run_config = RunConfig(**args.__dict__)
     net_config_path = os.path.join(exp_path, 'net.config')
 
     if args.resume:
@@ -58,10 +46,11 @@ def run_exp(args, exp_path):
     elif args.weight_preserve:
         print('Stablize the preserved weights')
         if args.mode == 'SimCLR':
+            run_config.change_dataset_batchsize('SimCLR', args.stablize_batch_size)
             net = ProxylessNASNets.build_from_config(net_config_path, is_supervised=False)
-            run_config.dataset = 'SimCLR'
             run_manager = RunManager(exp_path, net, run_config)
             run_manager.weight_stablize(args.mode, args.stablize_epochs)
+
             # load the stablized weights to supervised model
             search_weight = run_manager.net.state_dict()
             run_manager.net = ProxylessNASNets.build_from_config(net_config_path, is_supervised=True).to(run_manager.device)
@@ -70,7 +59,8 @@ def run_exp(args, exp_path):
                 if not key.startswith('classifier'):
                     train_weight[key] = search_weight[key]
             # change the dataset to supervised dataset
-            run_manager.run_config.change_dataset('cifar10')
+            run_manager.run_config.change_dataset('cifar10', args.batch_size)
+
         elif args.mode == 'supervised':
             net = ProxylessNASNets.build_from_config(net_config_path, is_supervised=True)
             run_manager = RunManager(exp_path, net, run_config)
@@ -102,6 +92,17 @@ if __name__ == '__main__':
     np.random.seed(args.manual_seed)
 
     assert os.path.exists(args.path), print('Exp record not found.')
+
+    # generate a new dir for training
+    if args.weight_preserve:
+        weight_status = 'weight_preserve'
+    else:
+        weight_status = 'train_from_scratch'
+    exp_name = args.mode + '_' + weight_status
+    parent_path = os.path.realpath(os.path.join(args.path, os.pardir))
+    new_path = os.path.join(parent_path, exp_name)
+    copytree(args.path, new_path)
+    args.path = new_path
 
     exp_path_list = []
     for dir_name in os.listdir(args.path):

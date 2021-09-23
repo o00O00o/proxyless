@@ -87,10 +87,10 @@ class RunConfig:
                 raise ValueError('do not support: %s' % self.dataset)
         return self._data_provider
 
-    def change_dataset(self, dataset):
-        if self.dataset != dataset:
-            self._data_provider = None
-            self.dataset = dataset
+    def change_dataset_batchsize(self, dataset, batch_size):
+        self._data_provider = None
+        self.dataset = dataset
+        self.batch_size = batch_size
 
     @property
     def train_loader(self):

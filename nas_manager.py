@@ -287,7 +287,7 @@ class ArchSearchRunManager:
         if save_times is None:
             save_stamps = list(range(50, n_epochs, 50))
         else:
-            save_stamps = np.linspace(n_epochs // 4, n_epochs, save_times).astype(int)
+            save_stamps = np.linspace(n_epochs // save_times, n_epochs, save_times).astype(int)
 
         for epoch in range(self.run_manager.start_epoch, self.run_manager.run_config.n_epochs):
             print('\n', '-' * 30, 'Train epoch: %d' % (epoch + 1), '-' * 30, '\n')
